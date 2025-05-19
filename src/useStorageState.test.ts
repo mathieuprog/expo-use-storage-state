@@ -1,14 +1,22 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
-import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
 import { useStorageState } from './useStorageState';
 
-// Mock SecureStore for native platforms
+// Mock SecureStore
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn().mockResolvedValue(null),
   setItemAsync: jest.fn().mockResolvedValue(undefined),
   deleteItemAsync: jest.fn().mockResolvedValue(undefined),
+}));
+
+// Mock AsyncStorage
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  getItem: jest.fn().mockResolvedValue(null),
+  setItem: jest.fn().mockResolvedValue(undefined),
+  removeItem: jest.fn().mockResolvedValue(undefined),
 }));
 
 // Mock localStorage for web
@@ -35,7 +43,7 @@ describe('useStorageState', () => {
     });
 
     it('should initialize with loading state, load stored value, and allow setting new values', async () => {
-      const { result } = renderHook(() => useStorageState('testKey'));
+      const { result } = renderHook(() => useStorageState('testKey', { useSecure: true }));
 
       const [state, setValue] = result.current;
       expect(state.loading).toBe(true);
@@ -66,8 +74,9 @@ describe('useStorageState', () => {
       expect(afterDeleteState.value).toBe(null);
   
       expect(SecureStore.getItemAsync).toHaveBeenCalledWith('testKey');
+      expect(AsyncStorage.getItem).not.toHaveBeenCalled();
 
-      const { result: result2 } = renderHook(() => useStorageState('testAnotherKey'));
+      const { result: result2 } = renderHook(() => useStorageState('testAnotherKey', { useSecure: true }));
       const [state2] = result2.current;
       expect(state2.loading).toBe(true);
       expect(state2.value).toBe(null);
@@ -80,6 +89,7 @@ describe('useStorageState', () => {
       });
   
       expect(SecureStore.getItemAsync).toHaveBeenCalledWith('testAnotherKey');
+      expect(AsyncStorage.getItem).not.toHaveBeenCalled();
     });
   });
 

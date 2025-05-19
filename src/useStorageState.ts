@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
 const isWeb = Platform.OS === 'web';
 
@@ -66,32 +67,11 @@ export interface StorageHookOptions {
    * Use this to show a toast, send to Sentry, etc.
    */
   onError?: (err: StorageError) => void;
-}
-
-async function getStorageItemAsync(key: string) {
-  try {
-    return isWeb
-      ? localStorage.getItem(key)
-      : await SecureStore.getItemAsync(key);
-  } catch (cause) {
-    throw new StorageReadError(`Failed to read ${key}`, { cause, key });
-  }
-}
-
-async function setStorageItemAsync(key: string, value: string | null) {
-  try {
-    if (value === null) {
-      isWeb
-        ? localStorage.removeItem(key)
-        : await SecureStore.deleteItemAsync(key);
-    } else {
-      isWeb
-        ? localStorage.setItem(key, value)
-        : await SecureStore.setItemAsync(key, value);
-    }
-  } catch (cause) {
-    throw new StorageWriteError(`Failed to write ${key}`, { cause, key });
-  }
+  /**
+   * On mobile platforms (non-web), use SecureStore if true, otherwise AsyncStorage.
+   * Web always uses localStorage.
+   */
+  useSecure?: boolean;
 }
 
 export function useStorageState<T>(key: string, opts: StorageHookOptions = {}): UseStorageStateHook<T> {
@@ -99,6 +79,48 @@ export function useStorageState<T>(key: string, opts: StorageHookOptions = {}): 
   const handleError = (e: StorageError) => {
     log.error(e);
     opts.onError?.(e);
+  };
+
+  const platformBackend = isWeb
+    ? {
+        getItem: (k: string) => Promise.resolve(localStorage.getItem(k)),
+        setItem: (k: string, v: string) => { localStorage.setItem(k,v); return Promise.resolve(); },
+        removeItem: (k: string) => { localStorage.removeItem(k); return Promise.resolve(); },
+      }
+    : opts.useSecure
+      ? {
+        getItem: SecureStore.getItemAsync,
+        setItem: SecureStore.setItemAsync,
+        removeItem: SecureStore.deleteItemAsync,
+      }
+      : {
+        getItem: AsyncStorage.getItem,
+        setItem: AsyncStorage.setItem,
+        removeItem: AsyncStorage.removeItem,
+      };
+
+  const backend = {
+    getItem: async (k: string) => {
+      try {
+        return await platformBackend.getItem(k);
+      } catch (cause) {
+        throw new StorageReadError(`Failed to read ${k}`, { cause, key: k });
+      }
+    },
+    setItem: async (k: string, v: string) => {
+      try {
+        return await platformBackend.setItem(k, v);
+      } catch (cause) {
+        throw new StorageWriteError(`Failed to write ${k}`, { cause, key: k });
+      }
+    },
+    removeItem: async (k: string) => {
+      try {
+        return await platformBackend.removeItem(k);
+      } catch (cause) {
+        throw new StorageWriteError(`Failed to delete ${k}`, { cause, key: k });
+      }
+    },
   };
 
   const [state, setState] = useState<StorageState<T>>({
@@ -119,7 +141,7 @@ export function useStorageState<T>(key: string, opts: StorageHookOptions = {}): 
     (async () => {
       let raw: string | null = null;
       try {
-        raw = await getStorageItemAsync(key);
+        raw = await backend.getItem(key);
       } catch (error_) {
         const error = toStorageError(error_, key);
         handleError(error);
@@ -129,7 +151,7 @@ export function useStorageState<T>(key: string, opts: StorageHookOptions = {}): 
 
       if (!mounted) return;
 
-      if (raw == null) {
+      if (raw === null) {
         setState({ loading: false, error: null, value: null });
         return;
       }
@@ -140,7 +162,7 @@ export function useStorageState<T>(key: string, opts: StorageHookOptions = {}): 
         const error = new StorageParseError('Invalid JSON', { cause, key });
         handleError(error);
         if (mounted) setState({ loading: false, error, value: null });
-        setStorageItemAsync(key, null).catch(handleError);
+        backend.removeItem(key).catch(handleError);
       }
     })();
 
@@ -154,7 +176,7 @@ export function useStorageState<T>(key: string, opts: StorageHookOptions = {}): 
     const task = async () => {
       try {
         if (value === null) {
-          await setStorageItemAsync(key, null);
+          await backend.removeItem(key);
         } else {
           let str: string;
           try {
@@ -162,7 +184,7 @@ export function useStorageState<T>(key: string, opts: StorageHookOptions = {}): 
           } catch (cause) {
             throw new StorageStringifyError('Could not stringify', { cause, key });
           }
-          await setStorageItemAsync(key, str);
+          await backend.setItem(key, str);
         }
       } catch (error_) {
         const error = toStorageError(error_, key);

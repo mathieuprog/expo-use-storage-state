@@ -27,11 +27,15 @@ interface AppSettings {
 }
 
 function MyComponent() {
-  const [{ loading, error, value }, setValue] = useStorageState<AppSettings>('app-settings');
+  const [{ loading, error, value }, setValue] = useStorageState<AppSettings>('app-settings', { useSecure: false });
 
   // …
 }
 ```
+
+#### useSecure?: boolean
+
+On mobile platforms (iOS/Android), set this to true to back your state with Expo’s SecureStore instead of AsyncStorage. Defaults to false.
 
 ### 3. Handle the async setter:
 
@@ -52,6 +56,8 @@ useStorageState('myKey', {
     Toast.show({ type: 'error', text1: err.operation + ' failed', text2: err.message });
     // send the error to your monitoring service
   },
+  // on native, use SecureStore instead of AsyncStorage
+  useSecure: true,
 });
 ```
 
