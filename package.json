@@ -1,6 +1,6 @@
 {
   "name": "expo-use-storage-state",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A React hook for persisting JSON state to Expo’s SecureStore or localStorage",
   "funding": "https://github.com/mathieuprog/expo-use-storage-state?sponsor=1",
   "type": "module",
