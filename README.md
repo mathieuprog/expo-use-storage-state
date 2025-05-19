@@ -65,5 +65,5 @@ useStorageState('myKey', {
 Make sure you also have these peer dependencies installed in your project:
 
 ```bash
-npm install react react-native expo-secure-store
+npm install react react-native expo-secure-store @react-native-async-storage/async-storage
 ```
