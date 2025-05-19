@@ -1,7 +1,7 @@
 {
   "name": "expo-use-storage-state",
   "version": "0.3.0",
-  "description": "A React hook for persisting JSON state to Expo’s SecureStore or localStorage",
+  "description": "A React hook for syncing JSON state with AsyncStorage or SecureStore (mobile) and localStorage (web)",
   "funding": "https://github.com/mathieuprog/expo-use-storage-state?sponsor=1",
   "type": "module",
   "main": "dist/index.cjs",

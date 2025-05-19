@@ -1,6 +1,6 @@
 # expo-use-storage-state
 
-A React hook for syncing JSON-serializable state with Expo’s `SecureStore` or `localStorage` (web).
+A React hook for syncing JSON state with AsyncStorage or SecureStore (mobile) and localStorage (web).
 
 ## Installation
 
