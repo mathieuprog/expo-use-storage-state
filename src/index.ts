@@ -2,11 +2,14 @@ export {
   StorageError,
   StorageReadError,
   StorageWriteError,
+  StorageDeleteError,
   StorageParseError,
   StorageStringifyError,
   StorageState,
   UseStorageStateHook,
   StorageHookOptions,
   useKeyValueStorage,
-  keyValueStorage
+  useSecureKeyValueStorage,
+  keyValueStorage,
+  secureKeyValueStorage,
 } from './useKeyValueStorage';
