@@ -27,7 +27,7 @@ interface AppSettings {
 }
 
 function MyComponent() {
-  const [{ loading, error, value }, setValue] =
+  const [{ isLoading, error, value }, setValue] =
     useStorageState<AppSettings>('app-settings', { useSecure: false });
 
   // …

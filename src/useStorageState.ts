@@ -52,7 +52,7 @@ const toStorageError = (e: unknown, key: string): StorageError =>
         : new StorageError(String(e), { cause: e, key });
 
 export type StorageState<T> = {
-  loading: boolean;
+  isLoading: boolean;
   error: StorageError | null;
   value: T | null;
 };
@@ -124,7 +124,7 @@ export function useStorageState<T>(key: string, opts: StorageHookOptions = {}): 
   };
 
   const [state, setState] = useState<StorageState<T>>({
-    loading: true,
+    isLoading: true,
     error: null,
     value: null,
   });
@@ -145,23 +145,23 @@ export function useStorageState<T>(key: string, opts: StorageHookOptions = {}): 
       } catch (error_) {
         const error = toStorageError(error_, key);
         handleError(error);
-        if (mounted) setState({ loading: false, error, value: null });
+        if (mounted) setState({ isLoading: false, error, value: null });
         return;
       }
 
       if (!mounted) return;
 
       if (raw === null) {
-        setState({ loading: false, error: null, value: null });
+        setState({ isLoading: false, error: null, value: null });
         return;
       }
 
       try {
-        setState({ loading: false, error: null, value: JSON.parse(raw) as T });
+        setState({ isLoading: false, error: null, value: JSON.parse(raw) as T });
       } catch (cause) {
         const error = new StorageParseError('Invalid JSON', { cause, key });
         handleError(error);
-        if (mounted) setState({ loading: false, error, value: null });
+        if (mounted) setState({ isLoading: false, error, value: null });
         backend.removeItem(key).catch(handleError);
       }
     })();
@@ -171,7 +171,7 @@ export function useStorageState<T>(key: string, opts: StorageHookOptions = {}): 
 
   const setValue = useCallback(async (value: T | null) => {
     const prevValue = prevRef.current;
-    setState({ loading: false, error: null, value }); // optimistic
+    setState({ isLoading: false, error: null, value }); // optimistic
 
     const task = async () => {
       try {
@@ -189,7 +189,7 @@ export function useStorageState<T>(key: string, opts: StorageHookOptions = {}): 
       } catch (error_) {
         const error = toStorageError(error_, key);
         handleError(error);
-        setState({ loading: false, error, value: prevValue }); // rollback
+        setState({ isLoading: false, error, value: prevValue }); // rollback
         throw error;
       }
     };

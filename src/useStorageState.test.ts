@@ -42,18 +42,18 @@ describe('useStorageState', () => {
       Platform.OS = 'ios';
     });
 
-    it('should initialize with loading state, load stored value, and allow setting new values', async () => {
+    it('should initialize with isLoading state, load stored value, and allow setting new values', async () => {
       const { result } = renderHook(() => useStorageState('testKey', { useSecure: true }));
 
       const [state, setValue] = result.current;
-      expect(state.loading).toBe(true);
+      expect(state.isLoading).toBe(true);
       expect(state.value).toBe(null);
       expect(state.error).toBe(null);
 
       // Wait for the async effect to complete
       await waitFor(() => {
         const [state] = result.current;
-        expect(state.loading).toBe(false);
+        expect(state.isLoading).toBe(false);
         expect(state.value).toBe(null);
       });
 
@@ -62,7 +62,7 @@ describe('useStorageState', () => {
       });
 
       const [afterUpdateState] = result.current;
-      expect(afterUpdateState.loading).toBe(false);
+      expect(afterUpdateState.isLoading).toBe(false);
       expect(afterUpdateState.value).toBe('newValue');
 
       act(() => {
@@ -70,7 +70,7 @@ describe('useStorageState', () => {
       });
 
       const [afterDeleteState] = result.current;
-      expect(afterDeleteState.loading).toBe(false);
+      expect(afterDeleteState.isLoading).toBe(false);
       expect(afterDeleteState.value).toBe(null);
   
       expect(SecureStore.getItemAsync).toHaveBeenCalledWith('testKey');
@@ -78,13 +78,13 @@ describe('useStorageState', () => {
 
       const { result: result2 } = renderHook(() => useStorageState('testAnotherKey', { useSecure: true }));
       const [state2] = result2.current;
-      expect(state2.loading).toBe(true);
+      expect(state2.isLoading).toBe(true);
       expect(state2.value).toBe(null);
 
       // Wait for the async effect to complete
       await waitFor(() => {
         const [state2] = result2.current;
-        expect(state2.loading).toBe(false);
+        expect(state2.isLoading).toBe(false);
         expect(state2.value).toBe(null);
       });
   
@@ -102,17 +102,17 @@ describe('useStorageState', () => {
       localStorageMock.clear();
     });
 
-    it('should initialize with loading state, load stored value, and allow setting new values', async () => {
+    it('should initialize with isLoading state, load stored value, and allow setting new values', async () => {
       const { result } = renderHook(() => useStorageState('testKey'));
 
       const [state, setValue] = result.current;
-      expect(state.loading).toBe(true);
+      expect(state.isLoading).toBe(true);
       expect(state.value).toBe(null);
       expect(state.error).toBe(null);
       // Wait for the async effect to complete
       await waitFor(() => {
         const [state] = result.current;
-      expect(state.loading).toBe(false);
+      expect(state.isLoading).toBe(false);
       expect(state.value).toBe(null);
       });
 
@@ -121,7 +121,7 @@ describe('useStorageState', () => {
       });
 
       const [afterUpdateState] = result.current;
-      expect(afterUpdateState.loading).toBe(false);
+      expect(afterUpdateState.isLoading).toBe(false);
       expect(afterUpdateState.value).toBe('newValue');
 
       act(() => {
@@ -129,18 +129,18 @@ describe('useStorageState', () => {
       });
 
       const [afterDeleteState] = result.current;
-      expect(afterDeleteState.loading).toBe(false);
+      expect(afterDeleteState.isLoading).toBe(false);
       expect(afterDeleteState.value).toBe(null);
 
       const { result: result2 } = renderHook(() => useStorageState('testAnotherKey'));
       const [state2] = result2.current;
-      expect(state2.loading).toBe(true);
+      expect(state2.isLoading).toBe(true);
       expect(state2.value).toBe(null);
 
       // Wait for the async effect to complete
       await waitFor(() => {
       const [state2] = result2.current;
-      expect(state2.loading).toBe(false);
+      expect(state2.isLoading).toBe(false);
       expect(state2.value).toBe(null);
       });
     });
