@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 
-import { useStorageState } from './useStorageState';
+import { useKeyValueStorage } from './useKeyValueStorage';
 
 // Mock SecureStore
 jest.mock('expo-secure-store', () => ({
@@ -30,7 +30,7 @@ const localStorageMock = (() => {
   };
 })();
 
-describe('useStorageState', () => {
+describe('useKeyValueStorage', () => {
   const originalPlatform = Platform.OS;
   
   beforeEach(() => {
@@ -43,7 +43,7 @@ describe('useStorageState', () => {
     });
 
     it('should initialize with isLoading state, load stored value, and allow setting new values', async () => {
-      const { result } = renderHook(() => useStorageState('testKey', { useSecure: true }));
+      const { result } = renderHook(() => useKeyValueStorage('testKey', { useSecure: true }));
 
       const [state, setValue] = result.current;
       expect(state.isLoading).toBe(true);
@@ -76,7 +76,7 @@ describe('useStorageState', () => {
       expect(SecureStore.getItemAsync).toHaveBeenCalledWith('testKey');
       expect(AsyncStorage.getItem).not.toHaveBeenCalled();
 
-      const { result: result2 } = renderHook(() => useStorageState('testAnotherKey', { useSecure: true }));
+      const { result: result2 } = renderHook(() => useKeyValueStorage('testAnotherKey', { useSecure: true }));
       const [state2] = result2.current;
       expect(state2.isLoading).toBe(true);
       expect(state2.value).toBe(null);
@@ -103,7 +103,7 @@ describe('useStorageState', () => {
     });
 
     it('should initialize with isLoading state, load stored value, and allow setting new values', async () => {
-      const { result } = renderHook(() => useStorageState('testKey'));
+      const { result } = renderHook(() => useKeyValueStorage('testKey'));
 
       const [state, setValue] = result.current;
       expect(state.isLoading).toBe(true);
@@ -132,7 +132,7 @@ describe('useStorageState', () => {
       expect(afterDeleteState.isLoading).toBe(false);
       expect(afterDeleteState.value).toBe(null);
 
-      const { result: result2 } = renderHook(() => useStorageState('testAnotherKey'));
+      const { result: result2 } = renderHook(() => useKeyValueStorage('testAnotherKey'));
       const [state2] = result2.current;
       expect(state2.isLoading).toBe(true);
       expect(state2.value).toBe(null);

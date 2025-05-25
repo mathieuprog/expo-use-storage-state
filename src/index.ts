@@ -7,5 +7,6 @@ export {
   StorageState,
   UseStorageStateHook,
   StorageHookOptions,
-  useStorageState
-} from './useStorageState';
+  useKeyValueStorage,
+  keyValueStorage
+} from './useKeyValueStorage';
