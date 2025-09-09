@@ -1,6 +1,6 @@
 {
   "name": "expo-use-storage-state",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "A React hook for syncing JSON state with AsyncStorage or SecureStore (mobile) and localStorage (web)",
   "funding": "https://github.com/mathieuprog/expo-use-storage-state?sponsor=1",
   "type": "module",
