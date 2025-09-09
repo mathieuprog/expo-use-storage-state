@@ -6,7 +6,7 @@ export {
   StorageParseError,
   StorageStringifyError,
   StorageState,
-  UseStorageStateHook,
+  UseStorageState,
   StorageHookOptions,
   useKeyValueStorage,
   useSecureKeyValueStorage,

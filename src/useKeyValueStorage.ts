@@ -15,6 +15,7 @@ export type StorageLogger = {
 const noopLogger: StorageLogger = { debug: () => {}, error: () => {} };
 let globalLogger: StorageLogger = noopLogger;
 
+/** Set a global logger used by the hook and convenience APIs */
 export function setStorageLogger(logger: StorageLogger) {
   globalLogger = logger ?? noopLogger;
 }
@@ -78,8 +79,7 @@ interface Backend {
 /**
  * Wrap a backend so all errors are converted to our typed errors
  * (and include the underlying `cause`).
- * Note: we *don't* log here to avoid double-logging. The hook
- * and convenience APIs log at the call site with better context.
+ * We deliberately *don't* log here to avoid double logging; callers log with context.
  */
 const withStorageErrorHandling = (backend: Backend): Backend => ({
   getItem: async (k) => {
@@ -215,7 +215,7 @@ export type StorageState<T> = {
   value: T | null;
 };
 
-export type UseStorageStateHook<T> = [StorageState<T>, (v: T | null) => Promise<void>];
+export type UseStorageState<T> = [StorageState<T>, (v: T | null) => Promise<void>];
 
 export interface StorageHookOptions {
   /**
@@ -234,31 +234,36 @@ export interface StorageHookOptions {
   useSecure?: boolean;
 }
 
-export function useSecureKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}): UseStorageStateHook<T> {
+export function useSecureKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}): UseStorageState<T> {
   return useKeyValueStorage<T>(key, { ...opts, useSecure: true });
 }
 
-export function useKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}): UseStorageStateHook<T> {
-  const log = opts.logger ?? globalLogger;
-  const useSecure = opts.useSecure ?? false;
+export function useKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}): UseStorageState<T> {
+  // Destructure so we never depend on the whole `opts` object
+  const { logger, onError, useSecure = false } = opts;
+  const initialLogger = logger ?? globalLogger;
 
-  const logError = useCallback(
-    (e: StorageError) => {
-      // Include operation, key, message AND the underlying cause
-      const op = e.operation ?? 'error';
-      const k = e.key ?? key;
-      const cause = (e as any)?.cause;
-      log.error(`storage ${op} for "${k}": ${e.message}`, cause ?? e);
-      opts.onError?.(e);
-    },
-    [log, opts, key]
-  );
+  // Keep latest logger/onError without retriggering effects
+  const logRef = useRef<StorageLogger>(initialLogger);
+  const onErrorRef = useRef<typeof onError>(onError);
 
-  const backend = useMemo(() => {
-    const b = pickBackend(useSecure);
-    log.debug(`storage backend for "${key}": ${isWeb ? 'localStorage' : useSecure ? 'SecureStore' : 'AsyncStorage'}`);
-    return b;
-  }, [useSecure, key, log]);
+  useEffect(() => { logRef.current = logger ?? globalLogger; }, [logger]);
+  useEffect(() => { onErrorRef.current = onError; }, [onError]);
+
+  const reportError = useCallback((e: StorageError, k: string) => {
+    const op = e.operation ?? 'error';
+    const cause = (e as any)?.cause;
+    logRef.current.error(`storage ${op} for "${k}": ${e.message}`, cause ?? e);
+    onErrorRef.current?.(e);
+  }, []);
+
+  const backend = useMemo(() => pickBackend(useSecure), [useSecure]);
+
+  // Log backend choice (once per key/backend)
+  useEffect(() => {
+    const name = isWeb ? 'localStorage' : useSecure ? 'SecureStore' : 'AsyncStorage';
+    logRef.current.debug(`storage backend for "${key}": ${name}`);
+  }, [key, useSecure]);
 
   const [state, setState] = useState<StorageState<T>>({
     isLoading: true,
@@ -277,16 +282,16 @@ export function useKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}
     const listener: Subscriber = (changedKey: string, rawValue: string | null) => {
       if (changedKey !== key) return;
       if (rawValue === null) {
-        log.debug(`event: remove "${key}"`);
+        logRef.current.debug(`event: remove "${key}"`);
         setState({ isLoading: false, error: null, value: null });
       } else {
         try {
           const parsed = JSON.parse(rawValue) as T;
-          log.debug(`event: set "${key}"`);
+          logRef.current.debug(`event: set "${key}"`);
           setState({ isLoading: false, error: null, value: parsed });
         } catch (cause) {
           const err = new StorageParseError('Invalid JSON', { cause, key });
-          logError(err);
+          reportError(err, key);
           setState({ isLoading: false, error: err, value: null });
         }
       }
@@ -296,26 +301,28 @@ export function useKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}
     // 2) Initial load
     let mounted = true;
     (async () => {
-      log.debug(`initial load "${key}"`);
+      logRef.current.debug(`initial load "${key}"`);
       let raw: string | null = null;
       try {
         raw = await backend.getItem(key);
       } catch (error_) {
         const err = toStorageError(error_, key);
-        logError(err);
+        reportError(err, key);
         if (mounted) setState({ isLoading: false, error: err, value: null });
         return;
       }
       if (!mounted) return;
+
       if (raw === null) {
         setState({ isLoading: false, error: null, value: null });
         return;
       }
+
       try {
         setState({ isLoading: false, error: null, value: JSON.parse(raw) as T });
       } catch (cause) {
         const err = new StorageParseError('Invalid JSON', { cause, key });
-        logError(err);
+        reportError(err, key);
         if (mounted) setState({ isLoading: false, error: err, value: null });
         backend.removeItem(key).catch(() => {}); // best-effort cleanup
       }
@@ -325,7 +332,7 @@ export function useKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}
       mounted = false;
       storageChangePublisher.unsubscribe(key, listener);
     };
-  }, [key, backend, log, logError]);
+  }, [key, backend]); // ✅ lean deps to avoid loops
 
   const setValue = useCallback(async (value: T | null) => {
     const prev = prevRef.current;
@@ -335,10 +342,10 @@ export function useKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}
     const task = async () => {
       try {
         if (value === null) {
-          log.debug(`remove "${key}" (begin)`);
+          logRef.current.debug(`remove "${key}" (begin)`);
           await backend.removeItem(key);
           storageChangePublisher.notifySubscribers(key, null);
-          log.debug(`remove "${key}" (commit)`);
+          logRef.current.debug(`remove "${key}" (commit)`);
         } else {
           let str: string;
           try {
@@ -346,14 +353,14 @@ export function useKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}
           } catch (cause) {
             throw new StorageStringifyError('Could not stringify', { cause, key });
           }
-          log.debug(`set "${key}" (begin)`);
+          logRef.current.debug(`set "${key}" (begin)`);
           await backend.setItem(key, str);
           storageChangePublisher.notifySubscribers(key, str);
-          log.debug(`set "${key}" (commit)`);
+          logRef.current.debug(`set "${key}" (commit)`);
         }
       } catch (error_) {
         const err = toStorageError(error_, key);
-        logError(err);
+        reportError(err, key);
         // Only roll back if no newer setValue call was made since this one started.
         if (opRef.current === myOp) {
           setState({ isLoading: false, error: err, value: prev });
@@ -367,7 +374,7 @@ export function useKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}
 
     queueRef.current = queueRef.current.then(task, task);
     return queueRef.current;
-  }, [key, backend, log, logError]);
+  }, [key, backend, reportError]);
 
   return [state, setValue];
 }
