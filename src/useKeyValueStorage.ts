@@ -6,8 +6,23 @@ import Publisher, { type Subscriber } from './Publisher';
 
 const isWeb = Platform.OS === 'web';
 
+/** ---------- Logging ---------- */
+export type StorageLogger = {
+  debug: (message: string) => void;
+  error: (message: string, error?: unknown) => void;
+};
+
+const noopLogger: StorageLogger = { debug: () => {}, error: () => {} };
+let globalLogger: StorageLogger = noopLogger;
+
+export function setStorageLogger(logger: StorageLogger) {
+  globalLogger = logger ?? noopLogger;
+}
+
+/** ---------- Errors ---------- */
 type Operation = 'read' | 'write' | 'delete' | 'parse' | 'stringify';
-type StorageOpts = ErrorOptions & { key?: string; operation?: Operation };
+type ErrorOptionsCompat = { cause?: unknown };
+type StorageOpts = ErrorOptionsCompat & { key?: string; operation?: Operation };
 
 export class StorageError extends Error {
   readonly key?: string;
@@ -20,31 +35,26 @@ export class StorageError extends Error {
     this.operation = opts.operation;
   }
 }
-
 export class StorageReadError extends StorageError {
   constructor(message: string, opts: Omit<StorageOpts, 'operation'> = {}) {
     super(message, { ...opts, operation: 'read' });
   }
 }
-
 export class StorageWriteError extends StorageError {
   constructor(message: string, opts: Omit<StorageOpts, 'operation'> = {}) {
     super(message, { ...opts, operation: 'write' });
   }
 }
-
 export class StorageDeleteError extends StorageError {
   constructor(message: string, opts: Omit<StorageOpts, 'operation'> = {}) {
     super(message, { ...opts, operation: 'delete' });
   }
 }
-
 export class StorageParseError extends StorageError {
   constructor(message: string, opts: Omit<StorageOpts, 'operation'> = {}) {
     super(message, { ...opts, operation: 'parse' });
   }
 }
-
 export class StorageStringifyError extends StorageError {
   constructor(message: string, opts: Omit<StorageOpts, 'operation'> = {}) {
     super(message, { ...opts, operation: 'stringify' });
@@ -55,9 +65,10 @@ const toStorageError = (e: unknown, key: string): StorageError =>
   e instanceof StorageError
     ? e
     : e instanceof Error
-        ? new StorageError(e.message, { cause: e, key })
-        : new StorageError(String(e), { cause: e, key });
+      ? new StorageError(e.message, { cause: e, key })
+      : new StorageError(String(e), { cause: e, key });
 
+/** ---------- Backends ---------- */
 interface Backend {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, rawValue: string): Promise<void>;
@@ -115,17 +126,16 @@ function pickBackend(useSecure: boolean): Backend {
   return useSecure ? secureStoreBackend : asyncStorageBackend;
 }
 
+/** ---------- Pub/Sub for cross-hook sync ---------- */
 const storageChangePublisher = new Publisher();
 
+/** Convenience APIs (non-hook) */
 export const secureKeyValueStorage = {
-  get: (key: string) =>
-    pickBackend(true).getItem(key),
-
+  get: (key: string) => pickBackend(true).getItem(key),
   set: async (key: string, rawValue: string) => {
     storageChangePublisher.notifySubscribers(key, rawValue);
     await pickBackend(true).setItem(key, rawValue);
   },
-
   remove: async (key: string) => {
     storageChangePublisher.notifySubscribers(key, null);
     await pickBackend(true).removeItem(key);
@@ -133,20 +143,18 @@ export const secureKeyValueStorage = {
 };
 
 export const keyValueStorage = {
-  get: (key: string) =>
-    pickBackend(false).getItem(key),
-
+  get: (key: string) => pickBackend(false).getItem(key),
   set: async (key: string, rawValue: string) => {
     storageChangePublisher.notifySubscribers(key, rawValue);
     await pickBackend(false).setItem(key, rawValue);
   },
-
   remove: async (key: string) => {
     storageChangePublisher.notifySubscribers(key, null);
     await pickBackend(false).removeItem(key);
   },
 };
 
+/** ---------- Hook ---------- */
 export type StorageState<T> = {
   isLoading: boolean;
   error: StorageError | null;
@@ -156,29 +164,47 @@ export type StorageState<T> = {
 export type UseStorageStateHook<T> = [StorageState<T>, (v: T | null) => Promise<void>];
 
 export interface StorageHookOptions {
-  logger?: Pick<Console, 'error'>;
+  /**
+   * Per-hook logger. If omitted, uses the global logger set via setStorageLogger().
+   * Default is a no-op logger.
+   */
+  logger?: StorageLogger;
+  /**
+   * Called whenever an error is caught by the hook (after it’s logged).
+   */
   onError?: (err: StorageError) => void;
   /**
-   * On mobile platforms (non-web), use SecureStore if true, otherwise AsyncStorage.
+   * On mobile (non-web), use SecureStore if true, otherwise AsyncStorage.
    * Web always uses localStorage.
    */
   useSecure?: boolean;
 }
 
 export function useSecureKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}): UseStorageStateHook<T> {
-  return useKeyValueStorage(key, { ...opts, useSecure: true });
+  return useKeyValueStorage<T>(key, { ...opts, useSecure: true });
 }
 
 export function useKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}): UseStorageStateHook<T> {
-  const log = opts.logger ?? console;
+  const log = opts.logger ?? globalLogger;
   const useSecure = opts.useSecure ?? false;
 
-  const handleError = useCallback((e: StorageError) => {
-    log.error(e);
-    opts.onError?.(e);
-  }, [log, opts.onError]);
+  const logError = useCallback(
+    (e: StorageError) => {
+      // Include operation, key, message AND the underlying cause
+      const op = e.operation ?? 'error';
+      const k = e.key ?? key;
+      const cause = (e as any)?.cause;
+      log.error(`storage ${op} for "${k}": ${e.message}`, cause ?? e);
+      opts.onError?.(e);
+    },
+    [log, opts, key]
+  );
 
-  const backend = useMemo(() => pickBackend(useSecure), [useSecure]);
+  const backend = useMemo(() => {
+    const b = pickBackend(useSecure);
+    log.debug(`storage backend for "${key}": ${isWeb ? 'localStorage' : useSecure ? 'SecureStore' : 'AsyncStorage'}`);
+    return b;
+  }, [useSecure, key, log]);
 
   const [state, setState] = useState<StorageState<T>>({
     isLoading: true,
@@ -187,57 +213,53 @@ export function useKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}
   });
 
   const prevRef = useRef<T | null>(null);
-  const queueRef = useRef<Promise<void>>(Promise.resolve()); // handle race condition
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
 
-  useEffect(() => { prevRef.current = state.value; }, [state.value]); // handle rollback
+  useEffect(() => { prevRef.current = state.value; }, [state.value]);
 
   useEffect(() => {
-    // Set up subscription first
+    // 1) Subscribe first to reflect external writes/removes immediately
     const listener: Subscriber = (changedKey: string, rawValue: string | null) => {
       if (changedKey !== key) return;
       if (rawValue === null) {
         setState({ isLoading: false, error: null, value: null });
       } else {
         try {
-          const parsedValue = JSON.parse(rawValue) as T;
-          setState({ isLoading: false, error: null, value: parsedValue });
+          const parsed = JSON.parse(rawValue) as T;
+          setState({ isLoading: false, error: null, value: parsed });
         } catch (cause) {
-          const error = new StorageParseError('Invalid JSON', { cause, key });
-          handleError(error);
-          setState({ isLoading: false, error, value: null });
+          const err = new StorageParseError('Invalid JSON', { cause, key });
+          logError(err);
+          setState({ isLoading: false, error: err, value: null });
         }
       }
     };
     storageChangePublisher.subscribe(key, listener);
-    
-    // Then do initial load for key
-    let mounted = true;
 
+    // 2) Initial load
+    let mounted = true;
     (async () => {
-      let rawValue: string | null = null;
+      let raw: string | null = null;
       try {
-        rawValue = await backend.getItem(key);
+        raw = await backend.getItem(key);
       } catch (error_) {
-        const error = toStorageError(error_, key);
-        handleError(error);
-        if (mounted) setState({ isLoading: false, error, value: null });
+        const err = toStorageError(error_, key);
+        logError(err);
+        if (mounted) setState({ isLoading: false, error: err, value: null });
         return;
       }
-
       if (!mounted) return;
-
-      if (rawValue === null) {
+      if (raw === null) {
         setState({ isLoading: false, error: null, value: null });
         return;
       }
-
       try {
-        setState({ isLoading: false, error: null, value: JSON.parse(rawValue) as T });
+        setState({ isLoading: false, error: null, value: JSON.parse(raw) as T });
       } catch (cause) {
-        const error = new StorageParseError('Invalid JSON', { cause, key });
-        handleError(error);
-        if (mounted) setState({ isLoading: false, error, value: null });
-        backend.removeItem(key).catch(handleError);
+        const err = new StorageParseError('Invalid JSON', { cause, key });
+        logError(err);
+        if (mounted) setState({ isLoading: false, error: err, value: null });
+        backend.removeItem(key).catch(() => {}); // best-effort cleanup
       }
     })();
 
@@ -245,10 +267,10 @@ export function useKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}
       mounted = false;
       storageChangePublisher.unsubscribe(key, listener);
     };
-  }, [key, backend, handleError]);
+  }, [key, backend, logError]);
 
   const setValue = useCallback(async (value: T | null) => {
-    const prevValue = prevRef.current;
+    const prev = prevRef.current;
     setState({ isLoading: false, error: null, value }); // optimistic
 
     const task = async () => {
@@ -267,16 +289,16 @@ export function useKeyValueStorage<T>(key: string, opts: StorageHookOptions = {}
           await backend.setItem(key, str);
         }
       } catch (error_) {
-        const error = toStorageError(error_, key);
-        handleError(error);
-        setState({ isLoading: false, error, value: prevValue }); // rollback
-        throw error;
+        const err = toStorageError(error_, key);
+        logError(err);
+        setState({ isLoading: false, error: err, value: prev }); // rollback
+        throw err;
       }
     };
 
     queueRef.current = queueRef.current.then(task, task);
     return queueRef.current;
-  }, [key, backend, handleError]);
+  }, [key, backend, logError]);
 
   return [state, setValue];
 }
