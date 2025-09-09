@@ -12,4 +12,5 @@ export {
   useSecureKeyValueStorage,
   keyValueStorage,
   secureKeyValueStorage,
+  setStorageLogger,
 } from './useKeyValueStorage';
