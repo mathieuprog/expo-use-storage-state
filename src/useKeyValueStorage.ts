@@ -106,21 +106,21 @@ const withStorageErrorHandling = (backend: Backend): Backend => ({
 });
 
 const localStorageBackend_: Backend = {
-  getItem: (k: string) => Promise.resolve(localStorage.getItem(k)),
-  setItem: (k: string, v: string) => { localStorage.setItem(k, v); return Promise.resolve(); },
-  removeItem: (k: string) => { localStorage.removeItem(k); return Promise.resolve(); },
+  getItem: (k) => Promise.resolve(localStorage.getItem(k)),
+  setItem: (k, v) => { localStorage.setItem(k, v); return Promise.resolve(); },
+  removeItem: (k) => { localStorage.removeItem(k); return Promise.resolve(); },
 };
 
 const secureStoreBackend_: Backend = {
-  getItem: SecureStore.getItemAsync,
-  setItem: SecureStore.setItemAsync,
-  removeItem: SecureStore.deleteItemAsync,
+  getItem: (k) => SecureStore.getItemAsync(k),
+  setItem: (k, v) => SecureStore.setItemAsync(k, v),
+  removeItem: (k) => SecureStore.deleteItemAsync(k),
 };
 
 const asyncStorageBackend_: Backend = {
-  getItem: AsyncStorage.getItem,
-  setItem: AsyncStorage.setItem,
-  removeItem: AsyncStorage.removeItem,
+  getItem: (k) => AsyncStorage.getItem(k),
+  setItem: (k, v) => AsyncStorage.setItem(k, v),
+  removeItem: (k) => AsyncStorage.removeItem(k),
 };
 
 const localStorageBackend = withStorageErrorHandling(localStorageBackend_);
