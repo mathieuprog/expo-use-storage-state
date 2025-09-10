@@ -8,6 +8,7 @@ const externalPeers = [
   'react',
   'react-native',
   'expo-secure-store',
+  '@react-native-async-storage/async-storage',
 ];
 
 export default [
